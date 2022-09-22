@@ -1,0 +1,19 @@
+{
+  "name": "verbosity-dom",
+  "version": "1.0.0",
+  "description": "Verbosity DOM and Template",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "rm -rf dist/ && NODE_ENV=production webpack"
+  },
+  "keywords": [
+    "Framework"
+  ],
+  "author": "Will Dengler",
+  "license": "ISC",
+  "devDependencies": {
+    "ts-loader": "^9.3.1",
+    "webpack": "^5.74.0",
+    "webpack-cli": "^4.10.0"
+  }
+}
