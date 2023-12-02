@@ -1,7 +1,7 @@
 import { VerbosityTemplate } from "../template/verbosity-template";
 import { VerbosityTemplateHydrater } from "../template/verbosity-template-hydrater";
 import { VerbosityTemplateLoadOptions } from "./verbosity-template-load-options";
-import { VerbosityTemplateLoader } from "./verbosity-template-loader";
+import { LoadedTemplateDefinition, VerbosityTemplateLoader } from "./verbosity-template-loader";
 
 interface VerbosityTemplateInformation {
   isMountedAsChild: boolean;
@@ -11,11 +11,13 @@ interface VerbosityTemplateInformation {
 export class VerbosityDom {
   private templateHydrater : VerbosityTemplateHydrater;
   private templateLoader : VerbosityTemplateLoader;
+
   private componentsMap : Map<VerbosityTemplate<HTMLElement>, VerbosityTemplate<HTMLElement>[]>;
   private componentInfoMap : Map<VerbosityTemplate<HTMLElement>, VerbosityTemplateInformation>;
 
   constructor(templateHydrater?: VerbosityTemplateHydrater) {
     this.templateHydrater = templateHydrater;
+
     this.componentsMap = new Map();
     this.componentInfoMap = new Map();
     this.templateLoader = new VerbosityTemplateLoader();
@@ -44,20 +46,19 @@ export class VerbosityDom {
    */
   replaceElementWithTemplate<T extends HTMLElement>(
     element: HTMLElement,
-    component: VerbosityTemplate<T>,
+    verbosityTemplate: VerbosityTemplate<T>,
     options?: VerbosityTemplateLoadOptions
   ): T {
-    this.hydrateVerbosityTemplate(component);
-    const template : T = this.templateLoader.loadTemplate(component, options);
+    // Store reference to the component
+    this.componentInfoMap.set(verbosityTemplate, { isMountedAsChild: false })
+    this.componentsMap.set(verbosityTemplate, []);
 
-    this.componentInfoMap.set(component, { isMountedAsChild: false })
-    this.componentsMap.set(component, []);
+    const templateDefinition = this.attachTemplate(
+      verbosityTemplate, options,
+      (htmlElement) => element.parentElement.replaceChild(htmlElement, element)
+    );
 
-    if (component.beforeTemplateAdded) component.beforeTemplateAdded();
-    element.parentElement.replaceChild(template, element);
-    if (component.onTemplateAdded) component.onTemplateAdded();
-
-    return template;
+    return templateDefinition.htmlElement;
   }
 
   replaceTemplateWithElement(
@@ -76,23 +77,21 @@ export class VerbosityDom {
     newVerbosityTemplate: VerbosityTemplate<T>,
     options?: VerbosityTemplateLoadOptions
   ) : T {
-    this.hydrateVerbosityTemplate(newVerbosityTemplate);
-    const parentElement = currentVerbosityTemplate.element.parentElement;
-
-    this.recursiveBeforeVerbosityTemplateRemoved(currentVerbosityTemplate);
-    const newElement : T = this.templateLoader.loadTemplate(newVerbosityTemplate, options);
 
     this.componentInfoMap.set(newVerbosityTemplate, { isMountedAsChild: false })
     this.componentsMap.set(newVerbosityTemplate, []);
 
-    if (newVerbosityTemplate.beforeTemplateAdded) newVerbosityTemplate.beforeTemplateAdded();
-    parentElement.replaceChild(newElement, currentVerbosityTemplate.element);
+    const templateDefinition = this.attachTemplate(
+      newVerbosityTemplate, options,
+      (htmlElement) => {
+        this.recursiveBeforeVerbosityTemplateRemoved(currentVerbosityTemplate);
+        currentVerbosityTemplate.element.parentElement.replaceChild(htmlElement, currentVerbosityTemplate.element);
+        this.recursiveAfterVerbosityTemplateRemoved(currentVerbosityTemplate);
+        this.clearVerbosityTemplateFromDom(currentVerbosityTemplate);
+      }
+    )
 
-    this.recursiveAfterVerbosityTemplateRemoved(currentVerbosityTemplate);
-    this.clearVerbosityTemplateFromDom(currentVerbosityTemplate);
-    if (newVerbosityTemplate.onTemplateAdded) newVerbosityTemplate.onTemplateAdded();
-
-    return newElement;
+    return templateDefinition.htmlElement;
   }
 
   appendTemplateToElement<T extends HTMLElement>(
@@ -100,17 +99,16 @@ export class VerbosityDom {
     verbosityTemplate : VerbosityTemplate<T>,
     options?: VerbosityTemplateLoadOptions
   ) : T {
-    this.hydrateVerbosityTemplate(verbosityTemplate);
-    const template : T = this.templateLoader.loadTemplate(verbosityTemplate, options);
 
     this.componentInfoMap.set(verbosityTemplate, { isMountedAsChild: false })
     this.componentsMap.set(verbosityTemplate, []);
 
-    if (verbosityTemplate.beforeTemplateAdded) verbosityTemplate.beforeTemplateAdded();
-    element.appendChild(template);
-    if (verbosityTemplate.onTemplateAdded) verbosityTemplate.onTemplateAdded();
+    const templateDefinition = this.attachTemplate(
+      verbosityTemplate, options,
+      (htmlElement) => element.appendChild(htmlElement)
+    );
 
-    return template;
+    return templateDefinition.htmlElement;
   }
 
   appendChildTemplateToElementById<T extends HTMLElement>(
@@ -139,18 +137,16 @@ export class VerbosityDom {
 
     const childrenVerbosityTemplates : VerbosityTemplate<HTMLElement>[] = this.componentsMap.get(parentVerbosityTemplate);
     childrenVerbosityTemplates.push(childVerbosityTemplate);
-    this.componentsMap.set(childVerbosityTemplate, []);
 
+    this.componentsMap.set(childVerbosityTemplate, []);
     this.componentInfoMap.set(childVerbosityTemplate, { isMountedAsChild: true, mount })
 
-    this.hydrateVerbosityTemplate(childVerbosityTemplate);
-    const childElement : T = this.templateLoader.loadTemplate(childVerbosityTemplate, options);
+    const templateDefinition = this.attachTemplate(
+      childVerbosityTemplate, options,
+      (htmlElement) => mount.appendChild(htmlElement)
+    );
 
-    if (childVerbosityTemplate.beforeTemplateAdded) childVerbosityTemplate.beforeTemplateAdded();
-    mount.appendChild(childElement);
-    if (childVerbosityTemplate.onTemplateAdded) childVerbosityTemplate.onTemplateAdded();
-
-    return childElement;
+    return templateDefinition.htmlElement;
   }
 
   removeTemplate(verbosityTemplate : VerbosityTemplate<HTMLElement>) : void {
@@ -218,5 +214,51 @@ export class VerbosityDom {
     childrenVerbosityTemplates.forEach(childVerbosityTemplate => this.clearVerbosityTemplateFromDom(childVerbosityTemplate));
     this.componentInfoMap.delete(component);
     this.componentsMap.delete(component);
+  }
+
+  private attachMounts<T extends HTMLElement>(templateDefintion : LoadedTemplateDefinition<T>) {
+    const componentAsAny : any = templateDefintion.verbosityTemplate;
+
+    templateDefintion.template_replacements.forEach(mount => {
+      if (componentAsAny[mount.templateMountReference]) {
+        const templateToMount = componentAsAny[mount.templateMountReference] as VerbosityTemplate<HTMLElement>;
+        this.replaceElementWithTemplate(mount.mountToElement, templateToMount);
+      }
+    });
+
+    templateDefintion.template_child.forEach(mount => {
+      if (componentAsAny[mount.templateMountReference]) {
+        const templateToMount = componentAsAny[mount.templateMountReference] as VerbosityTemplate<HTMLElement>;
+        this.appendTemplateToElement(mount.mountToElement, templateToMount);
+      }
+    });
+
+    templateDefintion.template_children.forEach(mount => {
+      if (componentAsAny[mount.templateMountReference]) {
+        const templatesToMount = componentAsAny[mount.templateMountReference] as VerbosityTemplate<HTMLElement>[];
+
+        templatesToMount.forEach(templateToMount => this.appendTemplateToElement(mount.mountToElement, templateToMount));
+      }
+    });
+  }
+
+  private attachTemplate<T extends HTMLElement>(
+    verbosityTemplate: VerbosityTemplate<T>,
+    options: VerbosityTemplateLoadOptions | null,
+    attachWith: (element: HTMLElement) => void
+  ) : LoadedTemplateDefinition<T> {
+
+      this.hydrateVerbosityTemplate(verbosityTemplate);
+      const templateDefinition : LoadedTemplateDefinition<T> = this.templateLoader.loadTemplate(verbosityTemplate, options);
+
+      this.attachMounts(templateDefinition);
+
+      if (verbosityTemplate.beforeTemplateAdded) verbosityTemplate.beforeTemplateAdded();
+
+      attachWith(templateDefinition.htmlElement);
+
+      if (verbosityTemplate.onTemplateAdded) verbosityTemplate.onTemplateAdded();
+
+      return templateDefinition;
   }
 }

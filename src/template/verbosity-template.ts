@@ -18,6 +18,15 @@
  * for a Template. These bindings inform Verbosity to perform special actions
  * when attaching the HTML for a template to a page.
  *
+ * The #hasBindings() method is responsible for informing the dom that a Verbosity
+ * template intends to use one or more of the available bindings.
+ *
+ * Note: When the #hasBindings() method returns `true`, the Verbosity Dom will have
+ * to walk the template's HTML tree in order to discover which elements have bindings
+ * attached. As such, if your template does not make use of bindings, then you should
+ * NOT return `true` from the #hasBindings() method in order to get more performant
+ * loads.
+ *
  * -----------------------------------------------------------------
  * Avaiable Bindings *
  * *******************
@@ -33,9 +42,6 @@
  *      listener's method. Note: Verbosity is capable of using private methods
  *      and attributes.
  *
- *   Feature Toggle Method:
- *      hasEventListeners()
- *
  *    Example Usage:
  *      class ExampleTemplate implements VerbosityTemplate<HTMLButtonElement> {
  *        template : HTMLButtonElement;
@@ -45,7 +51,7 @@
  *        myOnClick(event: MouseEvent) {
  *          console.log("Received a verbosity onclick event");
  *        }
- *        hasEventListeners() {
+ *        hasBindings() {
  *          return true;
  *        }
  *      }
@@ -59,11 +65,8 @@
  *   HTML Attribute Name: `data-vbs-assign`
  *
  *   HTML Attribute Value:
- *      The name of the attribute within your Template that bound HTMLElement should
- *      be assigned to.
- *
- *   Feature Toggle Method:
- *      hasAssignments()
+ *      The name of the attribute within your Template that the bound HTMLElement
+ *      should be assigned to.
  *
  *   Example Usage:
  *      class ExampleTemplate implements VerbosityTemplate<HTMLDivElement> {
@@ -72,11 +75,90 @@
  *        readTemplate() {
  *          return `<div><button data-vbs-assign="myButton"></button></div>`;
  *        }
- *        hasAssignments() {
+ *        hasBindings() {
  *          return true;
  *        }
  *        beforeTemplateAdded() {
  *          this.myButton.text = 'Press Me';
+ *        }
+ *      }
+ *
+ * -----------------------------------------------------------------
+ * 3. Replacement Binding
+ *      Verbosity allows you to replace HTML elements within the HTML of
+ *      your template with other Verbosity templates stored as attributes
+ *      within your template.
+ *
+ *   HTML Attribute Name: `data-vbs-replace`
+ *
+ *   HTML Attribute Value:
+ *      The name of the attribute within your Template that bound HTMLElement should
+ *      be replaced with. This attribute should be a VerbosityTemplate.
+ *
+ *   Example Usage:
+ *      class GenericDivTemplate implements VerbosityTemplate<HTMLDivElement> {
+ *        template : HTMLDivElement;
+ *        divContent : VerbosityTemplate<HTMLElement>;
+ *        constructor(divContent: VerbosityTemplate<HTMLElement>) {
+ *          this.divContent = divContent;
+ *        }
+ *        readTemplate() {
+ *          return `<div><template data-vbs-replace="divContent"></div>`;
+ *        }
+ *        hasBindings() {
+ *          return true;
+ *        }
+ *      }
+ *
+ * -----------------------------------------------------------------
+ * 4. Child Binding
+ *      Verbosity allows you to append an encapsulated Verbosity Template as a child to an
+ *      HTML element within the HTML of your template.
+ *
+ *   HTML Attribute Name: `data-vbs-child`
+ *
+ *   HTML Attribute Value:
+ *      The name of the attribute within your Template that bound HTMLElement should
+ *      use as its child element. This attribute should be a VerbosityTemplate.
+ *
+ *   Example Usage:
+ *      class GenericDivTemplate implements VerbosityTemplate<HTMLDivElement> {
+ *        template : HTMLDivElement;
+ *        divContent : VerbosityTemplate<HTMLElement>;
+ *        constructor(divContent: VerbosityTemplate<HTMLElement>) {
+ *          this.divContent = divContent;
+ *        }
+ *        readTemplate() {
+ *          return `<div data-vbs-child="divContent"></div>`;
+ *        }
+ *        hasBindings() {
+ *          return true;
+ *        }
+ *      }
+ *
+ * -----------------------------------------------------------------
+ * 5. Child Binding
+ *      Verbosity allows you to append an encapsulated list of Verbosity Templates as
+ *      children to an HTML element within the HTML of your template.
+ *
+ *   HTML Attribute Name: `data-vbs-children`
+ *
+ *   HTML Attribute Value:
+ *      The name of the attribute within your Template that bound HTMLElement should
+ *      use as its children elements. This attribute should be a list of VerbosityTemplates.
+ *
+ *   Example Usage:
+ *      class GenericListTemplate implements VerbosityTemplate<HTMLUListElement> {
+ *        template : HTMLUListElement;
+ *        listElements : VerbosityTemplate<HTMLLIElement>;
+ *        constructor(listElements: VerbosityTemplate<HTMLLIElement>) {
+ *          this.listElements = listElements;
+ *        }
+ *        readTemplate() {
+ *          return `<ul data-vbs-children="listElements"></ul>`;
+ *        }
+ *        hasBindings() {
+ *          return true;
  *        }
  *      }
  *
@@ -120,7 +202,7 @@ export interface VerbosityTemplate<T extends HTMLElement> {
    * first time the `template` attribute is available is once the
    * beforeVerbosityTempalteAdded() Life Cycle method is invoked.
    */
-   element : T;
+  element : T;
 
   /**
    * Provides a String representation of the HTML associated with this Template.
@@ -169,8 +251,17 @@ export interface VerbosityTemplate<T extends HTMLElement> {
   // END LIFECYCLE METHODS
   // BEGIN VERBOSITY BINDING FEATURE TOGGLE METHODS
 
-  hasEventListeners?() : boolean;
-  hasAssignments?() : boolean;
+  /**
+   * Determines if this template uses any of the verbosity bindings:
+   * * data-vbs-event-{name}
+   * * data-vbs-assign
+   * * data-vbs-replace
+   * * data-vbs-child
+   * * data-vbs-children
+   *
+   * @returns true if this template uses any of the verbosity bindings, false otherwise.
+   */
+  hasBindings?() : boolean;
 
   // END VERBOSITY BINDING FEATURE TOGGLE METHODS
 }

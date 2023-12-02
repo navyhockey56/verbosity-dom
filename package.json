@@ -1,6 +1,6 @@
 {
   "name": "verbosity-dom",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Verbosity DOM and Template",
   "main": "dist/index.js",
   "scripts": {
